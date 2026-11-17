@@ -25,12 +25,13 @@ Cada ejecución crea archivos nuevos (`AAAA/MM/DD/HHMM.csv.gz`) y no reescribe l
 1. Crea un repositorio **aparte** para el recolector, por ejemplo `recolector-movilidad-valencia`, y sube el contenido de esta carpeta (incluida la carpeta oculta `.github`).
    - Recomendación: hazlo **público**. Los datos son abiertos y no hay secretos en el código, y en repositorios públicos GitHub Actions es gratis sin límite. En uno privado, ejecutar cada 10 minutos supera los minutos gratuitos al mes.
    - El repositorio del proyecto sigue siendo privado y enlaza a este desde `data/README.md`.
-2. En el repositorio, ve a **Settings > Actions > General > Workflow permissions** y marca **Read and write permissions**. Así el robot puede guardar los datos.
-3. Ve a la pestaña **Actions**, elige "Recoger datos de movilidad" y pulsa **Run workflow** para probarlo. Si sale en verde, aparecerá la carpeta `data/raw` con los primeros archivos.
-4. A partir de ahí se ejecuta solo cada 10 minutos. GitHub a veces lo retrasa unos minutos: no pasa nada, cada archivo lleva su hora real.
-5. Opcional, para el horario de Metrovalencia: regístrate gratis en nap.transportes.gob.es, copia tu clave y guárdala en **Settings > Secrets and variables > Actions > New repository secret** con el nombre `NAP_API_KEY`. Nunca la escribas en el código.
+2. En el repositorio, ve a **Settings > Actions > General > Workflow permissions** y marca **Read and write permissions**. Así el robot puede guardar los datos. El workflow también declara `permissions: contents: write`.
+3. Si el repositorio es un **fork**, GitHub deja los workflows apagados. Entra en la pestaña **Actions** y pulsa **I understand my workflows, go ahead and enable them**. Sin ese clic el cron no arranca. El horario solo se lee de la rama por defecto (`main`): un cambio en otra rama no se ejecuta solo.
+4. Ve a la pestaña **Actions**, elige "Recoger datos de movilidad" y pulsa **Run workflow** con la rama **main**. Los archivos nuevos aparecen en `main`, en `data/raw/<fuente>/AAAA/MM/DD/`. Si el desplegable de rama es otra, el workflow igualmente escribe en `main`.
+5. Pulsa **Run workflow** una vez, con la rama **main**. Esa ejecución guarda los archivos al empezar y, unos 9 minutos después, pide la siguiente. La cadena sigue sola. Cada ejecución permanece en curso unos 10 minutos: es la espera, no un fallo. El cron de GitHub (`17 * * * *`, una vez por hora) solo vuelve a arrancar la cadena si se corta.
+6. Opcional, para el horario de Metrovalencia: regístrate gratis en nap.transportes.gob.es, copia tu clave y guárdala en **Settings > Secrets and variables > Actions > New repository secret** con el nombre `NAP_API_KEY`. Nunca la escribas en el código.
 
-Revisad una vez por semana la pestaña Actions: si una fuente cambia de formato o de dirección, la ejecución lo indica en el registro y el resto de fuentes siguen guardándose.
+Revisad una vez por semana la pestaña Actions: si una fuente cambia de formato o de dirección, la ejecución lo indica en el registro y el resto de fuentes siguen guardándose. En un repositorio público, GitHub apaga los workflows programados tras 60 días sin actividad; los commits del propio recolector cuentan como actividad.
 
 ## Ejecutarlo en tu ordenador
 

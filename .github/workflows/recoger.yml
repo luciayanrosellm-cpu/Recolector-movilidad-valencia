@@ -2,11 +2,15 @@ name: Recoger datos de movilidad
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # cada 10 minutos (GitHub puede retrasarlo unos minutos)
-  workflow_dispatch:          # permite lanzarlo a mano desde la pestaña Actions
+    # Respaldo horario (minuto 17 UTC). GitHub descarta casi todos los cron
+    # de cada 10 minutos, así que el ritmo lo mantiene la propia ejecución:
+    # al terminar pide la siguiente. Este horario solo reanuda la cadena si se corta.
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: recolector
@@ -15,9 +19,12 @@ concurrency:
 jobs:
   recoger:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Run workflow deja elegir otra rama. Los datos tienen que verse en main.
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -38,7 +45,43 @@ jobs:
           git config user.name "recolector-bot"
           git config user.email "recolector-bot@users.noreply.github.com"
           git add data
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo "Sin datos nuevos"
+            exit 0
+          fi
           git commit -m "Datos $(date -u +'%Y-%m-%d %H:%M') UTC"
-          git pull --rebase
-          git push
+          echo "Guardando datos en main"
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push fallido (intento ${attempt}); reintento"
+            sleep $((attempt * 3))
+          done
+          echo "No se pudo guardar los datos en el repositorio"
+          exit 1
+      - name: Programar la siguiente captura
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Espera de 9 minutos antes de pedir la siguiente captura"
+          sleep 540
+          queued=$(curl -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?status=queued&per_page=1" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total_count") or 0)')
+          if [ "$queued" -gt 0 ]; then
+            echo "Ya hay una ejecución en cola. No se crea otra."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/dispatch.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/recoger.yml/dispatches" \
+            -d '{"ref":"main"}')
+          echo "Respuesta al pedir la siguiente captura: HTTP ${code}"
+          cat /tmp/dispatch.json
+          [ "$code" = "204" ]
